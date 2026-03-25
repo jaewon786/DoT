@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>3D 명패 뷰어</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;500&display=swap');
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #ffffff;
+    color: #e0e0e0;
+    font-family: 'Noto Sans KR', sans-serif;
+    overflow: hidden;
+    height: 100vh;
+    width: 100vw;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #canvas-container { width: 100%; height: 100%; }
+  canvas { display: block; touch-action: none; }
+
+  /* ── Title Bar ── */
+  .title-bar {
+    position: fixed;
+    top: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    white-space: nowrap;
+    background: rgba(20,20,20,0.85);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px;
+    padding: 8px 20px;
+    z-index: 10;
+    font-weight: 300;
+    font-size: clamp(11px, 3vw, 14px);
+    letter-spacing: 0.08em;
+    color: rgba(255,255,255,0.6);
+  }
+
+  /* ── Controls Panel ── */
+  .controls-panel {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+    align-items: center;
+    background: rgba(20,20,20,0.85);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 16px;
+    padding: 10px 16px;
+    z-index: 10;
+    font-weight: 300;
+    font-size: clamp(10px, 2.8vw, 13px);
+    max-width: calc(100vw - 32px);
+    width: max-content;
+  }
+  .controls-panel span {
+    opacity: 0.5;
+    width: 100%;
+    text-align: center;
+    font-size: clamp(9px, 2.4vw, 12px);
+  }
+  .btn {
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.1);
+    color: #ccc;
+    padding: 8px 18px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: clamp(10px, 2.8vw, 12px);
+    font-weight: 300;
+    transition: all 0.2s;
+    min-width: 64px;
+    min-height: 36px;
+    touch-action: manipulation;
+  }
+  .btn:hover { background: rgba(255,255,255,0.12); color: #fff; }
+  .btn:active { background: rgba(255,255,255,0.18); color: #fff; }
+  .btn.active { background: rgba(100,200,200,0.15); border-color: rgba(100,200,200,0.3); color: #8edede; }
+
+  /* ── Mobile: hint hidden, buttons row ── */
+  @media (max-width: 480px) {
+    .controls-panel span { display: none; }
+    .controls-panel { padding: 12px 16px; bottom: 16px; gap: 10px; }
+    .title-bar { top: 12px; padding: 8px 18px; font-size: 14px; }
+    .btn { padding: 10px 20px; min-width: 72px; min-height: 40px; font-size: 12px; }
+  }
+</style>
+</head>
+<body>
+<div class="title-bar">3D 명패 뷰어</div>
+<div id="canvas-container"></div>
+<div class="controls-panel">
+  <span>드래그: 회전 · 스크롤: 확대/축소</span>
+  <button class="btn" onclick="resetCamera()">초기화</button>
+  <button class="btn" id="wireBtn" onclick="toggleWireframe()">와이어프레임</button>
+  <button class="btn active" id="autoBtn" onclick="toggleAutoRotate()">자동 회전</button>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+
+// ═══════════════════════════════════════════════
+//  각 요소 위치 설정 (여기서 자유롭게 조정하세요)
+// ═══════════════════════════════════════════════
+
+// 베이스 플레이트
+const BASE = { w: 5.6, d: 5.5, h: 0.12, x: 0, z: 0 };
+
+// 원형 홀
+const HOLE = { radius: 0.52, x: -1.2, z: 0.0 };
+
+// 홀 아래 텍스트 라벨 배치
+const LABEL = { x: HOLE.x, z: HOLE.z + 1.0, w: 2.6, h: 0.55 };
+
+// T자형 바 (가로바 + 세로바)
+const T_BAR = {
+  // 가로바 (T의 윗부분, 가로로 긴 바)
+  horizontal: { w: 2.5, h: 0.5, d: 0.55, x: 1.6, z: -0.5 },
+  // 세로바 (T의 아랫부분, 세로로 긴 바)
+  vertical:   { w: 0.55, h: 0.5, d: 3.0,  x: 2.05, z: 1.3 },
+};
+
+// C자 반원 곡선
+const C_CURVE = {
+  outerR: 1.15, innerR: 0.55, h: 0.5,
+  x: 0.6, z: 2.75,
+  rotationZ: 0  // 열린 방향 조정
+};
+
+// ═══════════════════════════════════════════════
+
+
+// ── Scene ──
+const container = document.getElementById('canvas-container');
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xffffff);
+
+const camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.1, 5000);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.2;
+container.appendChild(renderer.domElement);
+
+// ── Lights ──
+scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+
+const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+dirLight.position.set(5, 10, 7);
+dirLight.castShadow = true;
+dirLight.shadow.mapSize.set(2048, 2048);
+dirLight.shadow.camera.left = -10;
+dirLight.shadow.camera.right = 10;
+dirLight.shadow.camera.top = 10;
+dirLight.shadow.camera.bottom = -10;
+scene.add(dirLight);
+
+const fillLight = new THREE.DirectionalLight(0x8ecae6, 0.3);
+fillLight.position.set(-5, 3, -5);
+scene.add(fillLight);
+
+const rimLight = new THREE.DirectionalLight(0xadf0e6, 0.2);
+rimLight.position.set(0, 5, -8);
+scene.add(rimLight);
+
+// ── Materials ──
+const baseMat = new THREE.MeshPhysicalMaterial({
+  color: 0x111111, metalness: 0.0, roughness: 0.95,
+  clearcoat: 0.0, clearcoatRoughness: 1.0,
+});
+const emeraldMat = new THREE.MeshPhysicalMaterial({
+  color: 0x00a86b, metalness: 0.15, roughness: 0.3,
+  transparent: true, opacity: 0.85,
+  clearcoat: 0.35, clearcoatRoughness: 0.25,
+});
+const holeMat = new THREE.MeshPhysicalMaterial({
+  color: 0xffffff, metalness: 0.1, roughness: 0.35,
+  transparent: true, opacity: 0.85,
+});
+const glassMat = new THREE.MeshPhysicalMaterial({
+  color: 0x8ecfcf, metalness: 0.0, roughness: 0.05,
+  transmission: 0.55, thickness: 0.5, transparent: true, opacity: 0.72,
+  clearcoat: 1.0, clearcoatRoughness: 0.05, ior: 1.5,
+});
+
+function createBaseLabel(textLines) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 1024;
+  canvas.height = 256;
+  const ctx = canvas.getContext('2d');
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#f2f2f2';
+
+  ctx.font = '500 58px "Noto Sans KR", sans-serif';
+  ctx.fillText(textLines[0], canvas.width / 2, 96);
+
+  ctx.font = '400 44px "Noto Sans KR", sans-serif';
+  ctx.fillText(textLines[1], canvas.width / 2, 172);
+
+  const labelTexture = new THREE.CanvasTexture(canvas);
+  labelTexture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  labelTexture.minFilter = THREE.LinearFilter;
+  labelTexture.magFilter = THREE.LinearFilter;
+
+  return new THREE.Mesh(
+    new THREE.PlaneGeometry(LABEL.w, LABEL.h),
+    new THREE.MeshBasicMaterial({
+      map: labelTexture,
+      transparent: true,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    })
+  );
+}
+
+const nameplate = new THREE.Group();
+
+// ──────────────────────────
+// 1. 베이스 플레이트
+// ──────────────────────────
+const basePlate = new THREE.Mesh(new THREE.BoxGeometry(BASE.w, BASE.h, BASE.d), baseMat);
+basePlate.position.set(BASE.x, BASE.h / 2, BASE.z);
+basePlate.castShadow = true;
+basePlate.receiveShadow = true;
+nameplate.add(basePlate);
+
+// ──────────────────────────
+// 2. 원형 홀
+// ──────────────────────────
+const holeMesh = new THREE.Mesh(
+  new THREE.CylinderGeometry(HOLE.radius, HOLE.radius, BASE.h + 0.02, 48),
+  holeMat
+);
+holeMesh.position.set(HOLE.x, BASE.h / 2, HOLE.z);
+nameplate.add(holeMesh);
+
+// ──────────────────────────
+// 2-a. 원형 홀 아래 텍스트
+// ──────────────────────────
+const labelMesh = createBaseLabel([
+  'Hannam Design Factory',
+  'Day of Today - DoT'
+]);
+labelMesh.rotation.x = -Math.PI / 2;
+labelMesh.position.set(LABEL.x, BASE.h + 0.002, LABEL.z);
+nameplate.add(labelMesh);
+
+// ──────────────────────────
+// 3. T자형 바
+// ──────────────────────────
+
+// 3-a. 가로바 (T의 윗부분)
+const hBar = T_BAR.horizontal;
+const hBarMesh = new THREE.Mesh(new THREE.BoxGeometry(hBar.w, hBar.h, hBar.d), emeraldMat);
+hBarMesh.position.set(hBar.x, BASE.h + hBar.h / 2, hBar.z);
+hBarMesh.castShadow = true;
+nameplate.add(hBarMesh);
+
+// 3-b. 세로바 (T의 아랫부분)
+const vBar = T_BAR.vertical;  
+const vBarMesh = new THREE.Mesh(new THREE.BoxGeometry(vBar.w, vBar.h, vBar.d), emeraldMat);
+vBarMesh.position.set(vBar.x, BASE.h + vBar.h / 2, vBar.z);
+vBarMesh.castShadow = true;
+nameplate.add(vBarMesh);
+
+// ──────────────────────────
+// 4. C자 반원 곡선
+// ──────────────────────────
+const cShape = new THREE.Shape();
+cShape.moveTo(C_CURVE.outerR, 0);
+cShape.absarc(0, 0, C_CURVE.outerR, 0, Math.PI, false);
+cShape.lineTo(-C_CURVE.innerR, 0);
+cShape.absarc(0, 0, C_CURVE.innerR, Math.PI, 0, true);
+cShape.closePath();
+
+const curveGeom = new THREE.ExtrudeGeometry(cShape, {
+  depth: C_CURVE.h, bevelEnabled: true,
+  bevelThickness: 0.02, bevelSize: 0.02, bevelSegments: 3
+});
+const curveMesh = new THREE.Mesh(curveGeom, emeraldMat);
+curveMesh.rotation.x = -Math.PI / 2;
+curveMesh.rotation.z = C_CURVE.rotationZ;
+curveMesh.position.set(C_CURVE.x, BASE.h, C_CURVE.z);
+curveMesh.castShadow = true;
+nameplate.add(curveMesh);
+
+// ──────────────────────────
+nameplate.position.y = -0.3;
+scene.add(nameplate);
+
+// ── Ground + Grid ──
+const ground = new THREE.Mesh(
+  new THREE.PlaneGeometry(2000, 2000),
+  new THREE.MeshPhysicalMaterial({ color: 0xffffff, roughness: 1.0 })
+);
+ground.rotation.x = -Math.PI / 2;
+ground.position.y = -0.35;
+ground.receiveShadow = true;
+scene.add(ground);
+
+// ── Camera ──
+let isDragging = false, prevMouse = { x: 0, y: 0 };
+let spherical = { theta: 2.35, phi: 1.0, radius: 20 };
+let autoRotate = true, isWireframe = false;
+
+function updateCamera() {
+  camera.position.set(
+    spherical.radius * Math.sin(spherical.phi) * Math.cos(spherical.theta),
+    spherical.radius * Math.cos(spherical.phi),
+    spherical.radius * Math.sin(spherical.phi) * Math.sin(spherical.theta)
+  );
+  camera.lookAt(0, -0.15, 0);
+}
+
+const el = renderer.domElement;
+el.addEventListener('mousedown', e => { isDragging = true; prevMouse = { x: e.clientX, y: e.clientY }; });
+el.addEventListener('mousemove', e => {
+  if (!isDragging) return;
+  spherical.theta -= (e.clientX - prevMouse.x) * 0.005;
+  spherical.phi = Math.max(0.2, Math.min(1.45, spherical.phi + (e.clientY - prevMouse.y) * 0.005));
+  prevMouse = { x: e.clientX, y: e.clientY };
+  updateCamera();
+});
+el.addEventListener('mouseup', () => isDragging = false);
+el.addEventListener('mouseleave', () => isDragging = false);
+el.addEventListener('wheel', e => {
+  e.preventDefault();
+  spherical.radius = Math.max(6, Math.min(120, spherical.radius + e.deltaY * 0.01));
+  updateCamera();
+}, { passive: false });
+
+let lastTouchDist = 0;
+el.addEventListener('touchstart', e => {
+  if (e.touches.length === 1) { isDragging = true; prevMouse = { x: e.touches[0].clientX, y: e.touches[0].clientY }; }
+  else if (e.touches.length === 2) {
+    const dx = e.touches[0].clientX - e.touches[1].clientX, dy = e.touches[0].clientY - e.touches[1].clientY;
+    lastTouchDist = Math.sqrt(dx * dx + dy * dy);
+  }
+});
+el.addEventListener('touchmove', e => {
+  e.preventDefault();
+  if (e.touches.length === 1 && isDragging) {
+    spherical.theta -= (e.touches[0].clientX - prevMouse.x) * 0.005;
+    spherical.phi = Math.max(0.2, Math.min(1.45, spherical.phi + (e.touches[0].clientY - prevMouse.y) * 0.005));
+    prevMouse = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    updateCamera();
+  } else if (e.touches.length === 2) {
+    const dx = e.touches[0].clientX - e.touches[1].clientX, dy = e.touches[0].clientY - e.touches[1].clientY;
+    const d = Math.sqrt(dx * dx + dy * dy);
+    spherical.radius = Math.max(6, Math.min(120, spherical.radius - (d - lastTouchDist) * 0.03));
+    lastTouchDist = d;
+    updateCamera();
+  }
+}, { passive: false });
+el.addEventListener('touchend', () => isDragging = false);
+
+updateCamera();
+
+window.resetCamera = () => { spherical = { theta: 2.35, phi: 1.0, radius: 20 }; updateCamera(); };
+window.toggleWireframe = () => {
+  isWireframe = !isWireframe;
+  nameplate.traverse(c => { if (c.isMesh) c.material.wireframe = isWireframe; });
+  document.getElementById('wireBtn').classList.toggle('active', isWireframe);
+};
+window.toggleAutoRotate = () => {
+  autoRotate = !autoRotate;
+  document.getElementById('autoBtn').classList.toggle('active', autoRotate);
+};
+
+(function animate() {
+  requestAnimationFrame(animate);
+  if (autoRotate && !isDragging) { spherical.theta += 0.003; updateCamera(); }
+  renderer.render(scene, camera);
+})();
+
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+</script>
+</body>
+</html>
