@@ -206,11 +206,11 @@ function createBaseLabel(textLines) {
   ctx.textBaseline = 'middle';
   ctx.fillStyle = '#f2f2f2';
 
-  ctx.font = '500 58px "Noto Sans KR", sans-serif';
-  ctx.fillText(textLines[0], canvas.width / 2, 96);
+  ctx.font = '500 42px "Noto Sans KR", sans-serif';
+  ctx.fillText(textLines[0], canvas.width / 2, 88);
 
-  ctx.font = '400 44px "Noto Sans KR", sans-serif';
-  ctx.fillText(textLines[1], canvas.width / 2, 172);
+  ctx.font = '400 62px "Noto Sans KR", sans-serif';
+  ctx.fillText(textLines[1], canvas.width / 2, 174);
 
   const labelTexture = new THREE.CanvasTexture(canvas);
   labelTexture.anisotropy = renderer.capabilities.getMaxAnisotropy();
@@ -315,7 +315,7 @@ scene.add(ground);
 
 // ── Camera ──
 let isDragging = false, prevMouse = { x: 0, y: 0 };
-let spherical = { theta: 2.35, phi: 0.72, radius: 15 };
+let spherical = { theta: 1.2, phi: 0.72, radius: 18 };
 let autoRotate = true, isWireframe = false;
 
 function updateCamera() {
