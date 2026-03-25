@@ -36,7 +36,7 @@
     font-weight: 300;
     font-size: clamp(11px, 3vw, 14px);
     letter-spacing: 0.08em;
-    color: rgba(255,255,255,0.6);
+    color: rgba(255,255,255,0.9);
   }
 
   /* ── Controls Panel ── */
@@ -71,7 +71,7 @@
   .btn {
     background: rgba(255,255,255,0.06);
     border: 1px solid rgba(255,255,255,0.1);
-    color: #ccc;
+    color: #f2f2f2;
     padding: 8px 18px;
     border-radius: 8px;
     cursor: pointer;
@@ -85,7 +85,7 @@
   }
   .btn:hover { background: rgba(255,255,255,0.12); color: #fff; }
   .btn:active { background: rgba(255,255,255,0.18); color: #fff; }
-  .btn.active { background: rgba(100,200,200,0.15); border-color: rgba(100,200,200,0.3); color: #8edede; }
+  .btn.active { background: rgba(100,200,200,0.15); border-color: rgba(100,200,200,0.3); color: #c8fff0; }
 
   /* ── Mobile: hint hidden, buttons row ── */
   @media (max-width: 480px) {
@@ -101,7 +101,6 @@
 <div id="canvas-container"></div>
 <div class="controls-panel">
   <span>드래그: 회전 · 스크롤: 확대/축소</span>
-  <button class="btn" onclick="resetCamera()">초기화</button>
   <button class="btn" id="wireBtn" onclick="toggleWireframe()">와이어프레임</button>
   <button class="btn active" id="autoBtn" onclick="toggleAutoRotate()">자동 회전</button>
 </div>
@@ -371,8 +370,6 @@ el.addEventListener('touchmove', e => {
 el.addEventListener('touchend', () => isDragging = false);
 
 updateCamera();
-
-window.resetCamera = () => { spherical = { theta: 2.35, phi: 1.0, radius: 20 }; updateCamera(); };
 window.toggleWireframe = () => {
   isWireframe = !isWireframe;
   nameplate.traverse(c => { if (c.isMesh) c.material.wireframe = isWireframe; });
